@@ -1,0 +1,1085 @@
+# ============================================
+# ПРЕДНАСТРОЙКА (выполнить на ВСЕХ машинах)
+# ============================================
+
+# 1. Настройка DNS
+cat > /etc/resolv.conf << EOF
+nameserver 77.88.8.7
+nameserver 77.88.8.3
+search au-team.irpo
+EOF
+chattr +i /etc/resolv.conf
+
+nano /etc/syscl.conf 
+
+# 2. Настройка зеркал apt
+cat > /etc/apt/sources.list << EOF
+deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
+deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
+deb http://security.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
+EOF
+
+deb http://mirror.yandex.ru/debian bookworm main contrib non-free non-free-firmware
+deb http://mirror.yandex.ru/debian-security bookworm-security main contrib non-free-firmware
+deb http://mirror.yandex.ru/debian bookworm-updates main contrib non-free-firmware
+
+deb http://mirror.yandex.ru/debian trixie main contrib non-free non-free-firmware
+deb http://mirror.yandex.ru/debian-security trixie-security main contrib non-free-firmware
+deb http://mirror.yandex.ru/debian trixie-updates main contrib non-free-firmware
+
+
+# 3. Обновление и установка пакетов
+apt update && apt upgrade -y
+apt install -y vim nano curl wget net-tools iputils-ping traceroute tcpdump htop sudo iptables iptables-persistent
+
+# 4. Часовой пояс (Томск)
+timedatectl set-timezone Asia/Tomsk
+timedatectl set-ntp yes
+apt install -y chrony
+systemctl enable chrony
+systemctl start chrony
+
+МОДУЛЬ 1. Настройка сетевой инфраструктуры
+Задание 1. Базовая настройка устройств
+1.1 Имена устройств (FQDN)
+Установите полное доменное имя на каждом устройстве:
+
+bash
+hostnamectl set-hostname isp.au-team.irpo          # ISP
+hostnamectl set-hostname hq-rtr.au-team.irpo       # HQ-RTR
+hostnamectl set-hostname br-rtr.au-team.irpo       # BR-RTR
+hostnamectl set-hostname hq-srv.au-team.irpo       # HQ-SRV
+hostnamectl set-hostname br-srv.au-team.irpo       # BR-SRV
+hostnamectl set-hostname hq-cli.au-team.irpo       # HQ-CLI
+
+1.4 Настройка интерфейсов
+Конфиг HQ-RTR (/etc/network/interfaces)
+bash
+# The loopback network interface
+auto lo
+iface lo inet loopback
+
+allow-hotplug ens192
+iface ens192 inet static
+    address 172.16.1.2
+    netmask 255.255.255.240
+    gateway 172.16.1.1
+
+auto ens224
+iface ens224 inet static
+    address 192.168.100.1
+    netmask 255.255.255.224
+
+auto ens224:1
+iface ens224:1 inet static
+    address 192.168.200.1
+    netmask 255.255.255.240
+
+auto ens224.100
+iface ens224.100 inet static
+    address 192.168.100.3
+    netmask 255.255.255.224
+    vlan-raw-device ens224
+
+auto ens224.200
+iface ens224.200 inet static
+    address 192.168.200.3
+    netmask 255.255.255.240
+    vlan-raw-device ens224
+
+Конфиг BR-RTR (/etc/network/interfaces)
+bash
+# The loopback network interface
+auto lo
+iface lo inet loopback
+
+allow-hotplug ens192
+iface ens192 inet static
+    address 172.16.2.2
+    netmask 255.255.255.240
+    gateway 172.16.2.1
+
+auto ens224
+iface ens224 inet static
+    address 192.168.0.1
+    netmask 255.255.255.240
+
+
+Конфиг ISP (/etc/network/interfaces)
+bash
+# The loopback network interface
+auto lo
+iface lo inet loopback
+
+allow-hotplug ens192
+iface ens192 inet dhcp
+
+auto ens224
+iface ens224 inet static
+    address 172.16.1.1
+    netmask 255.255.255.240
+
+auto ens256
+iface ens256 inet static
+    address 172.16.2.1
+    netmask 255.255.255.240
+
+Конфиг HQ-SRV (/etc/network/interfaces)
+bash
+auto lo
+iface lo inet loopback
+
+allow-hotplug ens192
+iface ens192 inet static
+    address 192.168.100.2
+    netmask 255.255.255.224
+    gateway 192.168.100.1
+
+Конфиг BR-SRV (/etc/network/interfaces)
+bash
+auto lo
+iface lo inet loopback
+
+allow-hotplug ens192
+iface ens192 inet static
+    address 192.168.0.2
+    netmask 255.255.255.240
+    gateway 192.168.0.1
+
+Конфиг HQ-CLI (/etc/network/interfaces) — будет перезаписан DHCP
+bash
+auto lo
+iface lo inet loopback
+
+allow-hotplug ens192
+iface ens192 inet dhcp
+
+2.2 Настройка NAT на ISP
+Установите iptables:
+
+bash
+apt install iptables iptables-persistent
+Добавьте правила MASQUERADE:
+
+bash
+iptables -t nat -A POSTROUTING -s 172.16.1.0/28 -o ens192 -j MASQUERADE
+iptables -t nat -A POSTROUTING -s 172.16.2.0/28 -o ens192 -j MASQUERADE
+Сохраните правила:
+
+bash
+iptables-save > /etc/iptables/rules.v4
+systemctl restart iptables
+
+# ============================================
+# ЗАДАНИЕ 3 - Создание учётных записей
+# ============================================
+
+# НА СЕРВЕРАХ HQ-SRV и BR-SRV:
+useradd -u 2026 -m sshuser
+echo "sshuser:P@ssw0rd" | chpasswd
+echo "sshuser ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+# НА МАРШРУТИЗАТОРАХ HQ-RTR и BR-RTR:
+useradd -m net_admin
+echo "net_admin:P@ssw0rd" | chpasswd
+echo "net_admin ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+# ============================================
+# ЗАДАНИЕ 4 - Коммутация VLAN (уже настроено в HQ-RTR)
+# ============================================
+
+# Проверка на HQ-RTR:
+ip link show | grep vlan
+ip addr show | grep -E "vlan|192.168"
+
+# ============================================
+# ЗАДАНИЕ 5 - Безопасный SSH
+# ============================================
+
+# НА СЕРВЕРАХ HQ-SRV и BR-SRV:
+cat > /etc/ssh/sshd_config << EOF
+Port 2026
+PermitRootLogin no
+AllowUsers sshuser
+MaxAuthTries 2
+Banner /etc/ssh/banner.txt
+PubkeyAuthentication yes
+PasswordAuthentication yes
+UsePAM yes
+EOF
+
+cat > /etc/ssh/banner.txt << EOF
+================================================
+            AUTHORIZED ACCESS ONLY
+================================================
+Unauthorized access is prohibited.
+All activities are monitored and logged.
+================================================
+EOF
+
+systemctl restart sshd
+
+Задание 6. Настройка GRE-туннеля между HQ-RTR и BR-RTR
+6.1 Загрузка модуля GRE
+На обоих маршрутизаторах:
+
+bash
+echo "ip_gre" >> /etc/modules
+modprobe ip_gre
+6.2 Настройка туннеля на HQ-RTR
+В файл /etc/network/interfaces добавьте:
+
+bash
+auto tun0
+iface tun0 inet static
+    address 10.10.0.1
+    netmask 255.255.255.252
+    pre-up ip tunnel add tun0 mode gre remote 172.16.2.2 local 172.16.1.2 ttl 255
+    up ip link set tun0 up
+    down ip link set tun0 down
+    post-down ip tunnel del tun0
+6.3 Настройка туннеля на BR-RTR
+bash
+auto tun0
+iface tun0 inet static
+    address 10.10.0.2
+    netmask 255.255.255.252
+    pre-up ip tunnel add tun0 mode gre remote 172.16.1.2 local 172.16.2.2 ttl 255
+    up ip link set tun0 up
+    down ip link set tun0 down
+    post-down ip tunnel del tun0
+
+
+Задание 7. Динамическая маршрутизация (OSPF)
+7.1 Установка FRR
+На HQ-RTR и BR-RTR:
+
+bash
+apt install frr
+7.2 Включение OSPF
+В файле /etc/frr/daemons измените:
+
+text
+ospfd=yes
+Перезапустите FRR:
+
+bash
+systemctl restart frr
+
+
+7.3 Настройка OSPF на HQ-RTR
+bash
+vtysh
+bash
+configure terminal
+router ospf
+ ospf router-id 1.1.1.1
+ passive-interface default
+ no passive-interface tun0
+ network 10.10.0.0/30 area 0
+ network 192.168.100.0/27 area 0
+ network 192.168.200.0/28 area 0
+ area 0 authentication message-digest
+ exit
+interface tun0
+ ip ospf message-digest-key 1 md5 P@ssw0rd
+ ip ospf authentication message-digest
+ exit
+write
+exit
+
+7.4 Настройка OSPF на BR-RTR
+bash
+vtysh
+bash
+configure terminal
+router ospf
+ ospf router-id 2.2.2.2
+ passive-interface default
+ no passive-interface tun0
+ network 10.10.0.0/30 area 0
+ network 192.168.0.0/28 area 0
+ area 0 authentication message-digest
+ exit
+interface tun0
+ ip ospf message-digest-key 1 md5 P@ssw0rd
+ ip ospf authentication message-digest
+ exit
+write
+exit
+7.5 Проверка OSPF
+bash
+vtysh -c "show ip ospf neighbor"
+vtysh -c "show ip route ospf"
+
+Задание 8. Настройка NAT на HQ-RTR и BR-RTR
+На HQ-RTR:
+bash
+iptables -t nat -A POSTROUTING -s 192.168.100.0/27 -o ens192 -j MASQUERADE
+iptables -t nat -A POSTROUTING -s 192.168.200.0/28 -o ens192 -j MASQUERADE
+iptables-save > /etc/iptables/rules.v4
+На BR-RTR:
+bash
+iptables -t nat -A POSTROUTING -s 192.168.0.0/28 -o ens192 -j MASQUERADE
+iptables-save > /etc/iptables/rules.v4
+
+Задание 9. Настройка DHCP-сервера на HQ-RTR
+9.1 Установка DHCP-сервера
+bash
+apt install isc-dhcp-server
+9.2 Настройка интерфейса
+В файле /etc/default/isc-dhcp-server:
+
+text
+INTERFACESv4="ens224.200"
+9.3 Настройка DHCP
+В файле /etc/dhcp/dhcpd.conf:
+
+bash
+ddns-update-style interim;
+authoritative;
+
+subnet 192.168.200.0 netmask 255.255.255.240 {
+    range 192.168.200.4 192.168.200.14;
+    option routers 192.168.200.1;
+    option domain-name-servers 192.168.100.2;
+    option domain-name "au-team.irpo";
+    default-lease-time 600;
+    max-lease-time 7200;
+}
+Адрес шлюза (192.168.200.1) исключён из пула автоматически, так как не входит в range.
+
+9.4 Запуск DHCP-сервера
+bash
+systemctl restart isc-dhcp-server
+systemctl enable isc-dhcp-server
+
+Задание 10. Настройка DNS-сервера на HQ-SRV
+10.1 Установка BIND
+bash
+apt install bind9 dnsutils
+10.2 Настройка зон
+В файле /etc/bind/named.conf.default-zones добавьте:
+
+bash
+zone "au-team.irpo" {
+    type master;
+    file "/etc/bind/au-team.irpo";
+};
+
+zone "100.168.192.in-addr.arpa" {
+    type master;
+    file "/etc/bind/au-team.irpo_obr";
+};
+10.3 Прямая зона (/etc/bind/au-team.irpo)
+bash
+$TTL 86400
+@ IN SOA hq-srv.au-team.irpo. admin.au-team.irpo. (
+    2026000001
+    3600
+    1800
+    604800
+    86400
+)
+@ IN NS hq-srv.au-team.irpo.
+
+hq-rtr  IN A 192.168.100.1
+br-rtr  IN A 192.168.0.1
+hq-srv  IN A 192.168.100.2
+hq-cli  IN A 192.168.200.5
+br-srv  IN A 192.168.0.2
+docker  IN A 172.16.2.1
+web     IN A 172.16.1.1
+
+10.4 Обратная зона (/etc/bind/au-team.irpo_obr)
+bash
+$TTL 86400
+@ IN SOA hq-srv.au-team.irpo. admin.au-team.irpo. (
+    2026000001
+    3600
+    1800
+    604800
+    86400
+)
+@ IN NS hq-srv.au-team.irpo.
+
+1.100.168.192.in-addr.arpa IN PTR hq-rtr.au-team.irpo.
+2.100.168.192.in-addr.arpa IN PTR hq-srv.au-team.irpo.
+5.200.168.192.in-addr.arpa IN PTR hq-cli.au-team.irpo.
+10.5 Настройка forwarders
+В файле /etc/bind/named.conf.options:
+
+bash
+forwarders {
+    77.88.8.7;
+    77.88.8.3;
+};
+
+
+10.6 Запуск DNS
+bash
+systemctl restart bind9
+systemctl enable bind9
+10.7 Проверка
+bash
+host hq-srv.au-team.irpo 192.168.100.2
+host 192.168.100.2 192.168.100.2
+
+
+Задание 11. Настройка часового пояса
+На всех устройствах (кроме виртуального коммутатора):
+
+bash
+timedatectl set-timezone Asia/Tomsk
+timedatectl
+
+
+МОДУЛЬ 2. Организация сетевого администрирования
+Задание 1. Настройка контроллера домена Samba DC на BR-SRV
+1.1 Установка Samba
+bash
+apt install samba smbclient winbind
+1.2 Настройка Samba DC
+bash
+samba-tool domain provision --use-rfc2307 --realm=AU-TEAM.IRPO --domain=AU-TEAM --adminpass=P@ssw0rd --server-role=dc
+1.3 Настройка /etc/samba/smb.conf
+ini
+[global]
+    workgroup = AU-TEAM
+    realm = AU-TEAM.IRPO
+    netbios name = BR-SRV
+    server role = active directory domain controller
+    dns forwarder = 77.88.8.7
+
+
+1.4 Запуск Samba
+bash
+systemctl unmask samba-ad-dc
+systemctl enable samba-ad-dc
+systemctl start samba-ad-dc
+1.5 Ввод HQ-CLI в домен
+На HQ-CLI:
+
+bash
+apt install samba winbind
+net ads join -U Administrator
+# Пароль: P@ssw0rd
+1.6 Создание пользователей
+На BR-SRV:
+
+bash
+for i in {1..5}; do
+    samba-tool user create hquser$i P@ssw0rd
+done
+1.7 Создание группы hq
+bash
+samba-tool group add hq
+for i in {1..5}; do
+    samba-tool group addmembers hq hquser$i
+done
+
+1.8 Настройка sudo для группы hq
+На HQ-CLI создайте файл /etc/sudoers.d/hq:
+
+bash
+%hq ALL=(ALL) /bin/cat, /bin/grep, /usr/bin/id
+
+
+Задание 2. Настройка RAID0 на HQ-SRV
+2.1 Установка mdadm
+bash
+apt install mdadm
+2.2 Создание RAID0
+bash
+mdadm --create /dev/md0 --level=0 --raid-devices=2 /dev/sdb /dev/sdc
+2.3 Создание файловой системы
+bash
+mkfs.ext4 /dev/md0
+mkdir /raid
+mount /dev/md0 /raid
+2.4 Автомонтирование
+В /etc/fstab добавьте:
+
+bash
+/dev/md0 /raid ext4 defaults 0 0
+2.5 Сохранение конфигурации RAID
+bash
+mdadm --detail --scan >> /etc/mdadm/mdadm.conf
+update-initramfs -u
+
+
+Задание 3. Настройка NFS на HQ-SRV
+3.1 Установка NFS-сервера
+bash
+apt install nfs-kernel-server
+3.2 Создание общей папки
+bash
+mkdir -p /raid/nfs
+chmod 777 /raid/nfs
+3.3 Настройка экспорта
+В файле /etc/exports:
+
+bash
+/raid/nfs 192.168.200.0/28(rw,sync,no_subtree_check)
+3.4 Запуск NFS
+bash
+exportfs -a
+systemctl restart nfs-kernel-server
+3.5 Настройка клиента (HQ-CLI)
+bash
+apt install nfs-common
+mkdir /mnt/nfs
+mount -t nfs 192.168.100.2:/raid/nfs /mnt/nfs
+
+
+3.6 Автомонтирование на клиенте
+В /etc/fstab на HQ-CLI:
+
+bash
+192.168.100.2:/raid/nfs /mnt/nfs nfs defaults 0 0
+
+
+Задание 4. Настройка NTP (chrony) на ISP
+4.1 Установка chrony на ISP
+bash
+apt install chrony
+4.2 Настройка /etc/chrony/chrony.conf
+bash
+server 0.ru.pool.ntp.org iburst
+local stratum 5
+allow 172.16.0.0/16
+4.3 Запуск chrony
+bash
+systemctl restart chrony
+systemctl enable chrony
+4.4 Настройка клиентов (HQ-RTR, BR-RTR, HQ-SRV, BR-SRV, HQ-CLI)
+На каждом клиенте:
+
+bash
+apt install chrony
+
+
+В /etc/chrony/chrony.conf:
+
+bash
+server 172.16.1.1 iburst
+bash
+systemctl restart chrony
+4.5 Проверка
+bash
+chronyc sources
+
+
+Задание 5. Настройка Ansible на BR-SRV
+5.1 Установка Ansible
+bash
+apt install ansible
+5.2 Генерация SSH-ключей
+bash
+ssh-keygen -t rsa -b 4096 -N "" -f /root/.ssh/id_rsa
+5.3 Копирование ключей на хосты
+bash
+ssh-copy-id -p 2026 sshuser@192.168.100.2   # HQ-SRV
+ssh-copy-id -p 2026 sshuser@192.168.200.5   # HQ-CLI
+ssh-copy-id net_admin@172.16.1.2            # HQ-RTR
+ssh-copy-id net_admin@172.16.2.2            # BR-RTR
+5.4 Создание файла инвентаря /etc/ansible/hosts
+ini
+[servers]
+hq-srv ansible_host=192.168.100.2 ansible_user=sshuser ansible_port=2026
+hq-cli ansible_host=192.168.200.5 ansible_user=sshuser ansible_port=2026
+
+[routers]
+hq-rtr ansible_host=172.16.1.2 ansible_user=net_admin
+br-rtr ansible_host=172.16.2.2 ansible_user=net_admin
+
+[all:vars]
+ansible_python_interpreter=/usr/bin/python3
+
+5.5 Проверка
+bash
+ansible all -m ping
+
+
+Задание 6. Развертывание Docker-приложения на BR-SRV (ПОДРОБНО)
+6.1 Установка Docker
+bash
+apt update
+apt install -y ca-certificates curl gnupg lsb-release
+Добавление официального репозитория Docker
+bash
+curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+bash
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+Установка Docker Engine и Docker Compose
+bash
+apt update
+apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+Или классический способ (если предыдущий не работает):
+
+bash
+wget -qO- https://get.docker.com | bash
+apt install -y docker-compose
+Добавление пользователя sshuser в группу docker
+bash
+usermod -aG docker sshuser
+
+
+6.2 Монтирование Additional.iso
+bash
+mkdir -p /mnt/iso
+mount /dev/cdrom /mnt/iso
+# или если файл ISO скачан:
+# mount -o loop /путь/к/Additional.iso /mnt/iso
+Проверьте содержимое:
+
+bash
+ls -la /mnt/iso/docker/
+Должны быть:
+
+text
+site_latest.tar
+mariadb_latest.tar
+6.3 Импорт образов из Additional.iso
+bash
+docker load < /mnt/iso/docker/site_latest.tar
+docker load < /mnt/iso/docker/mariadb_latest.tar
+Проверка импортированных образов
+bash
+docker images
+
+Вы должны увидеть:
+
+text
+REPOSITORY      TAG       IMAGE ID       CREATED        SIZE
+site_latest     latest    xxxxxxxxxxxx   2 days ago     500MB
+mariadb_latest  latest    xxxxxxxxxxxx   2 days ago     400MB
+Примечание: возможно, образы называются иначе (например site:latest, mariadb:latest). Уточните командой docker images и скорректируйте название в docker-compose.yml.
+
+6.4 Создание директории для проекта
+bash
+mkdir -p /opt/testapp
+cd /opt/testapp
+6.5 Создание docker-compose.yml
+bash
+nano docker-compose.yml
+
+
+Содержимое файла (строго по заданию):
+yaml
+version: '3.8'
+
+services:
+  testapp:
+    image: site_latest:latest
+    container_name: testapp
+    ports:
+      - "8080:80"
+    environment:
+      DB_HOST: db
+      DB_NAME: testdb
+      DB_USER: testc
+      DB_PASSWORD: P@ssw0rd
+    depends_on:
+      - db
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  db:
+    image: mariadb_latest:latest
+    container_name: db
+    environment:
+      MYSQL_DATABASE: testdb
+      MYSQL_USER: testc
+      MYSQL_PASSWORD: P@ssw0rd
+      MYSQL_ROOT_PASSWORD: rootpass
+    volumes:
+      - db-data:/var/lib/mysql
+    restart: unless-stopped
+    networks:
+      - app-network
+
+volumes:
+  db-data:
+
+networks:
+  app-network:
+    driver: bridge
+
+
+Важно: если образы называются иначе (например site и mariadb), исправьте image: соответственно.
+
+6.6 Запуск стека контейнеров
+bash
+docker-compose up -d
+Или если используется docker-compose-plugin:
+
+bash
+docker compose up -d
+Что произойдёт:
+Будет создана сеть app-network
+
+Будет создан volume db-data для хранения данных БД
+
+Запустится контейнер db (mariadb)
+
+Запустится контейнер testapp (веб-приложение)
+
+Контейнер testapp будет ждать, пока БД не поднимется (благодаря depends_on)
+
+
+6.7 Проверка статуса контейнеров
+bash
+docker ps
+Должны быть:
+
+text
+CONTAINER ID   IMAGE                  STATUS          PORTS
+xxxxxxxxxxxx   site_latest:latest     Up 2 minutes    0.0.0.0:8080->80/tcp
+xxxxxxxxxxxx   mariadb_latest:latest  Up 2 minutes    3306/tcp
+6.8 Просмотр логов (при необходимости)
+bash
+docker logs testapp
+docker logs db
+6.9 Проверка работоспособности приложения
+С BR-SRV (локально):
+
+bash
+curl http://localhost:8080
+С HQ-CLI (через браузер или curl):
+
+bash
+curl http://192.168.0.2:8080
+В браузере на HQ-CLI откройте:
+
+text
+http://192.168.0.2:8080
+6.10 Настройка автозапуска контейнеров
+bash
+systemctl enable docker
+Docker Compose уже настроен с restart: unless-stopped, поэтому контейнеры автоматически запустятся при перезагрузке системы.
+
+6.11 Дополнительные команды для управления
+bash
+# Остановка контейнеров
+docker-compose down
+
+# Перезапуск контейнеров
+docker-compose restart
+
+# Пересборка и запуск (если изменился compose-файл)
+docker-compose up -d --force-recreate
+
+# Вход в контейнер testapp (для отладки)
+docker exec -it testapp /bin/bash
+
+# Вход в контейнер БД
+docker exec -it db /bin/bash
+
+# Подключение к MySQL внутри контейнера
+docker exec -it db mysql -u testc -pP@ssw0rd testdb
+Возможные проблемы и их решение
+Проблема	Причина	Решение
+Cannot connect to the Docker daemon	Docker не запущен	systemctl start docker
+Permission denied	Пользователь не в группе docker	usermod -aG docker sshuser и перелогиньтесь
+image not found	Образ называется иначе	docker images → скорректируйте имя в docker-compose.yml
+port is already allocated	Порт 8080 занят	netstat -tlnp | grep 8080 → остановите процесс или смените порт
+Connection refused	Контейнер testapp не запустился	docker logs testapp
+Access denied for user	Неправильные параметры БД в testapp	Проверьте переменные окружения в docker-compose.yml
+Контейнер testapp падает с ошибкой подключения к БД	БД не успела подняться	docker-compose restart testapp
+
+
+Задание 7. Развертывание веб-приложения на HQ-SRV (ПОДРОБНО)
+7.1 Установка необходимых пакетов
+bash
+apt update
+apt install -y apache2 mariadb-server php php-mysqlnd php-pdo php-gd php-mbstring php-zip php-intl php-soap php-curl libapache2-mod-php
+7.2 Настройка PHP (увеличение max_input_vars)
+bash
+echo "max_input_vars = 6000" >> /etc/php/8.2/apache2/php.ini
+Примечание: версия PHP может отличаться (8.1, 8.2, 8.3). Уточните командой php -v.
+
+7.3 Настройка MariaDB
+Запустите скрипт безопасной настройки:
+
+bash
+mysql_secure_installation
+Отвечайте следующим образом:
+
+Enter current password for root: просто нажмите Enter (пароля ещё нет)
+
+Switch to unix_socket authentication: N
+
+Change the root password? Y → введите P@ssw0rd (обратите внимание: в задании P@ssw0rd, а не P@sswOrd)
+
+Remove anonymous users? Y
+
+Disallow root login remotely? Y
+
+Remove test database and access to it? Y
+
+Reload privilege tables now? Y
+
+
+7.4 Создание базы данных и пользователя
+bash
+mysql -u root -pP@ssw0rd
+Выполните SQL-запросы:
+
+sql
+CREATE DATABASE webdb DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'webc'@'localhost' IDENTIFIED BY 'P@ssw0rd';
+GRANT ALL PRIVILEGES ON webdb.* TO 'webc'@'localhost';
+FLUSH PRIVILEGES;
+EXIT;
+7.5 Импорт дампа базы данных
+Где находится дамп?
+В образе Additional.iso в директории web находится файл dump.sql.
+
+Шаг 1: Смонтировать Additional.iso
+bash
+mkdir -p /mnt/iso
+mount /dev/cdrom /mnt/iso   # или mount -o loop /путь/к/Additional.iso /mnt/iso
+Шаг 2: Проверить содержимое
+bash
+ls -la /mnt/iso/web/
+
+Вы должны увидеть:
+
+text
+dump.sql
+index.php
+images/
+Шаг 3: Импортировать дамп
+bash
+mysql -u root -pP@ssw0rd webdb < /mnt/iso/web/dump.sql
+Шаг 4: Проверить импорт
+bash
+mysql -u root -pP@ssw0rd -e "USE webdb; SHOW TABLES;"
+7.6 Копирование файлов приложения (ПОДРОБНО)
+Шаг 1: Очистка стандартной страницы Apache (опционально)
+bash
+rm /var/www/html/index.html
+Шаг 2: Копирование index.php
+bash
+cp /mnt/iso/web/index.php /var/www/html/index.php
+Шаг 3: Копирование директории images
+bash
+cp -r /mnt/iso/web/images /var/www/html/images
+
+Шаг 4: Проверка скопированных файлов
+bash
+ls -la /var/www/html/
+Должны быть:
+
+text
+-rw-r--r--  1 root root  12345 index.php
+drwxr-xr-x  2 root root   4096 images
+Шаг 5: Установка правильных прав
+bash
+chown -R www-data:www-data /var/www/html/
+chmod -R 755 /var/www/html/
+Пояснение:
+
+www-data — пользователь и группа, от которых работает Apache
+
+755 — права: владелец (www-data) может читать, писать, выполнять; остальные — только читать и выполнять
+
+Шаг 6: Дополнительная проверка прав
+bash
+ls -la /var/www/html/
+
+Должно быть:
+
+text
+-rwxr-xr-x  1 www-data www-data  12345 index.php
+drwxr-xr-x  2 www-data www-data   4096 images
+7.7 Настройка подключения к БД в index.php
+Отредактируйте файл:
+
+bash
+nano /var/www/html/index.php
+Найдите строки с параметрами подключения к БД (обычно в начале файла) и приведите их к виду:
+
+php
+$db_host = "localhost";
+$db_user = "webc";
+$db_password = "P@ssw0rd";
+$db_name = "webdb";
+Важно: если в исходном файле используются другие имена переменных (например $servername, $username), измените их соответствующим образом.
+
+7.8 Перезапуск Apache
+bash
+systemctl restart apache2
+7.9 Настройка автозапуска
+bash
+systemctl enable apache2
+systemctl enable mariadb
+
+
+7.10 Проверка работоспособности
+Откройте браузер на HQ-CLI и перейдите по адресу:
+
+text
+http://192.168.100.2
+Вы должны увидеть главную страницу веб-приложения (интернет-магазин, блог, или что там в дампе).
+
+7.11 Альтернативный вариант: если index.php требует дополнительные настройки
+Некоторые приложения (например, Moodle, WordPress) требуют указания параметров через веб-интерфейс. В этом случае:
+
+Откройте http://192.168.100.2 в браузере
+
+Пройдите мастер установки:
+
+Выберите язык
+
+Укажите тип БД: MySQL/MariaDB
+
+Введите параметры:
+
+Хост: localhost
+
+Имя БД: webdb
+
+Пользователь: webc
+
+Пароль: P@ssw0rd
+
+Создайте администратора (если требуется)
+
+
+Часто возникающие ошибки и их решение
+Ошибка	Причина	Решение
+403 Forbidden	Неправильные права на файлы	chown -R www-data:www-data /var/www/html/
+404 Not Found	index.php не скопирован	Проверьте ls /var/www/html/index.php
+Connection refused	MariaDB не запущена	systemctl restart mariadb
+Access denied for user 'webc'	Неправильный пароль	Проверьте пароль в index.php и в БД
+Unknown database 'webdb'	База данных не создана	Создайте БД: CREATE DATABASE webdb;
+Пустая страница (белый экран)	Ошибка PHP	Проверьте логи: tail -f /var/log/apache2/error.log
+
+
+Задание 8. Статическая трансляция портов (проброс)
+8.1 Настройка на BR-RTR
+Установите nftables:
+
+bash
+apt install nftables
+Создайте файл /etc/nftables.conf:
+
+bash
+#!/usr/sbin/nft -f
+
+flush ruleset
+
+table ip nat {
+    chain prerouting {
+        type nat hook prerouting priority 0; policy accept;
+        iif ens192 tcp dport 8080 dnat to 192.168.0.2:8080
+        iif ens192 tcp dport 2026 dnat to 192.168.0.2:2026
+    }
+}
+Запустите:
+
+bash
+systemctl enable nftables
+systemctl restart nftables
+
+8.2 Настройка на HQ-RTR
+bash
+#!/usr/sbin/nft -f
+
+flush ruleset
+
+table ip nat {
+    chain prerouting {
+        type nat hook prerouting priority 0; policy accept;
+        iif ens192 tcp dport 8080 dnat to 192.168.100.2:80
+        iif ens192 tcp dport 2026 dnat to 192.168.100.2:2026
+    }
+}
+Задание 9. Настройка nginx как обратного прокси на ISP
+9.1 Установка nginx
+bash
+apt install nginx
+
+
+9.2 Создание конфигурации
+В файле /etc/nginx/sites-available/reverse-proxy:
+
+nginx
+server {
+    listen 80;
+    server_name web.au-team.irpo;
+    
+    location / {
+        proxy_pass http://172.16.1.2:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+
+server {
+    listen 80;
+    server_name docker.au-team.irpo;
+    
+    location / {
+        proxy_pass http://172.16.2.2:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+9.3 Активация сайта
+bash
+ln -s /etc/nginx/sites-available/reverse-proxy /etc/nginx/sites-enabled/
+rm /etc/nginx/sites-enabled/default
+nginx -t
+systemctl restart nginx
+
+
+Задание 10. Настройка web-аутентификации на ISP
+10.1 Создание файла паролей
+bash
+apt install apache2-utils
+htpasswd -c /etc/nginx/.htpasswd WEBc
+# Пароль: P@ssw0rd
+10.2 Обновление конфигурации nginx
+В файле /etc/nginx/sites-available/reverse-proxy для web.au-team.irpo:
+
+nginx
+server {
+    listen 80;
+    server_name web.au-team.irpo;
+
+    auth_basic "Restricted Access";
+    auth_basic_user_file /etc/nginx/.htpasswd;
+    
+    location / {
+        proxy_pass http://172.16.1.2:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+10.3 Перезапуск nginx
+bash
+nginx -t
+systemctl restart nginx
+
+
+Задание 11. Установка Яндекс Браузера на HQ-CLI
+bash
+# Скачивание и установка
+wget https://browser.yandex.ru/download/?download=deb -O /tmp/yandex.deb
+dpkg -i /tmp/yandex.deb
+apt --fix-broken install -y
+Или через репозиторий:
+
+bash
+echo "deb [arch=amd64] https://repo.yandex.ru/yandex-browser/deb stable main" > /etc/apt/sources.list.d/yandex-browser.list
+wget -qO- https://repo.yandex.ru/yandex-browser/YANDEX-BROWSER-KEY.GPG | apt-key add -
+apt update
+apt install yandex-browser-stable
+
+
+
+
