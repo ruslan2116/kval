@@ -1269,6 +1269,9 @@ iface ens192 inet dhcp
 bash
 apt install iptables iptables-persistent
 
+если не скачивается:
+apt install libxtables12=1.8.9-2 iptables=1.8.9-2 iptables-persistent
+
 iptables -t nat -A POSTROUTING -s 172.16.1.0/28 -o ens192 -j MASQUERADE
 iptables -t nat -A POSTROUTING -s 172.16.2.0/28 -o ens192 -j MASQUERADE
 
