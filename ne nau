@@ -1451,6 +1451,10 @@ text
 INTERFACESv4="ens224.200"
 В /etc/dhcp/dhcpd.conf:
 
+если не работает
+echo 'INTERFACESv4="ens224.200"' > /etc/default/isc-dhcp-server
+
+
 bash
 ddns-update-style interim;
 authoritative;
