@@ -1104,6 +1104,11 @@ apt install yandex-browser-stable
 # ПРЕДНАСТРОЙКА (выполнить на ВСЕХ машинах)
 # ============================================
 
+СКАЧАТЬ -
+
+apt install aptitude
+
+
 cat >> /etc/sysctl.conf << EOF
 
 # Network settings for routing
