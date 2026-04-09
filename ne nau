@@ -171,6 +171,10 @@ iface ens192 inet dhcp
 
 bash
 apt install iptables iptables-persistent
+
+если не скачивается: 
+apt install libxtables12=1.8.9-2 iptables=1.8.9-2 iptables-persistent
+
 Добавьте правила MASQUERADE:
 
 bash
