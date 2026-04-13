@@ -1197,6 +1197,13 @@ iface ens224.200 inet static
     netmask 255.255.255.240
     vlan-raw-device ens224
 
+            VLAN
+
+apt install vlan
+
+echo 8021q >> /etc/modules
+
+
 
 BR-RTR (/etc/network/interfaces)
 
