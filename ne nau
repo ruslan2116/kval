@@ -1447,6 +1447,19 @@ iptables -t nat -A POSTROUTING -s 192.168.200.0/28 -o ens192 -j MASQUERADE
 iptables-save > /etc/iptables/rules.v4
 
 
+УДАЛИТЬ ПРАВИЛО: 
+sudo iptables -D <цепочка> <номер_правила>
+
+ПРИМЕР -
+
+# Сначала посмотреть номера правил
+sudo iptables -L --line-numbers
+
+# Удалить правило номер 3 из цепочки INPUT
+sudo iptables -D INPUT 3
+
+
+
 BR-RTR:
 
 bash
